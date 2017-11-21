@@ -1,0 +1,4 @@
+S->(Y|ε
+Y->yY|zY|zZ
+Z->zZ|vZ|vV
+V->vV|)
