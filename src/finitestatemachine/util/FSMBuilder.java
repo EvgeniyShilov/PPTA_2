@@ -9,12 +9,14 @@ import grammar.util.GrammarUtil;
 import grammar.util.RuleAnalyzer;
 import grammar.util.StringUtil;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 
 public class FSMBuilder {
 
     private static final String ADDITIONAL_NON_TERMINAL = "N";
-    private static final String EMPTY_STRING = "ε";
 
     public static FiniteStateMachine buildFromGrammar(Grammar grammar) {
         if (GrammarUtil.getType(grammar) != GrammarType.REGULAR)
@@ -26,9 +28,7 @@ public class FSMBuilder {
         finiteStateMachine.setInputSymbols(grammar.getT());
         List<TransitionFunction> transitionFunctions = GrammarRulesParser.toTransitionFunctions(completedRules);
         finiteStateMachine.setTransitionFunctions(transitionFunctions);
-        Set<Character> finiteStates = getFiniteStates(transitionFunctions);
-        finiteStates.addAll(getFiniteStatesEmptyString(completedRules));
-        finiteStateMachine.setFiniteStates(finiteStates);
+        finiteStateMachine.setFiniteStates(getFiniteStates(completedRules, finiteStateMachine.getInitialStates()));
         return finiteStateMachine;
     }
 
@@ -36,45 +36,33 @@ public class FSMBuilder {
         List<Rule> rules = new ArrayList<>();
         for (Rule rule : grammar.getRules()) {
             String rightPart = rule.getRight();
-            if (rightPart.length() == 1) rule.setRight(rightPart + ADDITIONAL_NON_TERMINAL);
+            if (rightPart.length() == 1){
+                Rule otherRule = new Rule();
+                otherRule.setLeft(rule.getLeft());
+                otherRule.setRight(rightPart + ADDITIONAL_NON_TERMINAL);
+                rules.add(otherRule);
+            }
             rules.add(rule);
         }
         return rules;
     }
 
-    public static Set<Character> getFiniteStates(List<TransitionFunction> functions) {
-        Set<Character> finiteStates = new HashSet<>();
-        for (TransitionFunction outer : functions) {
-            boolean isFinite = true;
-            for (TransitionFunction inner : functions)
-                if (outer.getOut() == inner.getIn().getState()) isFinite = false;
-            if (isFinite) finiteStates.add(outer.getOut());
-        }
-        Map<Character, TransitionFunction> statesWithOneTransitionFunction = new HashMap<>();
-        int count = 0;
-        for (TransitionFunction outer : functions) {
-            for (TransitionFunction inner : functions)
-                if (outer.getIn().getState().equals(inner.getIn().getState()))
-                    count++;
-            if (count == 1) statesWithOneTransitionFunction.put((Character) outer.getIn().getState(), outer);
-            count = 0;
-        }
-        for (Character state : statesWithOneTransitionFunction.keySet()) {
-            TransitionFunction function = statesWithOneTransitionFunction.get(state);
-            for (TransitionFunction fun : functions)
-                if (fun.getIn().getState().equals(function.getOut()) &&
-                        statesWithOneTransitionFunction.keySet().contains(fun.getIn().getState()))
-                    finiteStates.add(state);
-        }
-        return finiteStates;
-    }
-
-    private static Set<Character> getFiniteStatesEmptyString(List<Rule> rules) {
+    private static Set<Character> getFiniteStates(List<Rule> rules, Set<Character> initialStates) {
         Set<Character> finiteStates = new HashSet<>();
         for (Rule rule : rules) {
-            String right = rule.getRight();
-            if (right.length() == 2 && right.contains(EMPTY_STRING))
-                finiteStates.add(rule.getLeft().toCharArray()[0]);
+            if (rule.getRight().length() == 2 && !Character.isUpperCase(rule.getRight().charAt(0))) {
+                Character terminal = rule.getRight().charAt(0);
+                Character leftNonTerminal = rule.getLeft().charAt(0);
+                for (Rule other : rules)
+                    if (other.getRight().length() == 1 && !Character.isUpperCase(other.getRight().charAt(0))) {
+                        Character otherTerminal = other.getRight().charAt(0);
+                        Character otherLeftNonTerminal = other.getLeft().charAt(0);
+                        if (terminal.equals(otherTerminal) && leftNonTerminal.equals(otherLeftNonTerminal))
+                            finiteStates.add(rule.getRight().charAt(1));
+                    }
+            }
+            if (rule.getRight().isEmpty() && initialStates.contains(rule.getLeft().charAt(0)))
+                finiteStates.add(rule.getLeft().charAt(0));
         }
         return finiteStates;
     }

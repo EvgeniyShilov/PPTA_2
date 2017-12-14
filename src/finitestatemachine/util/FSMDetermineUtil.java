@@ -12,42 +12,83 @@ public class FSMDetermineUtil {
 
     public static void determine(FiniteStateMachine finiteStateMachine) {
         Map<TransitionFunctionInput, Set<Character>> map = getTransitionTable(finiteStateMachine.getTransitionFunctions());
-        map = determineTransitionFunctions(map);
+        map = determineTransitionFunctions(map, finiteStateMachine.getInputSymbols());
         Map<Set<Character>, Character> newNotations = NewNotationsProvider.forTransitionTable(map, finiteStateMachine.getStates());
         map = replaceWithNewNotations(map, newNotations);
         List<TransitionFunction> determinedFunctions = toTransitionFunctions(map);
         finiteStateMachine.setTransitionFunctions(determinedFunctions);
-        finiteStateMachine.setFiniteStates(FSMBuilder.getFiniteStates(determinedFunctions));
+        Set<Character> oldFiniteStates = finiteStateMachine.getFiniteStates();
+        Set<Character> newFiniteStates = new HashSet<>(oldFiniteStates);
+        for (Map.Entry<Set<Character>, Character> entry : newNotations.entrySet())
+            for (Character oldSignal : entry.getKey())
+                if (oldFiniteStates.contains(oldSignal)) {
+                    newFiniteStates.add(entry.getValue());
+                    break;
+                }
+        finiteStateMachine.setFiniteStates(newFiniteStates);
         for (Character state : newNotations.values()) finiteStateMachine.addState(state);
+        deleteAllUnusedStates(finiteStateMachine);
+    }
+
+    private static void deleteAllUnusedStates(FiniteStateMachine finiteStateMachine) {
+        Set<Character> states = finiteStateMachine.getStates();
+        Set<Character> statesToRemove = new HashSet<>();
+        loop: for (Character state : states) {
+            for (TransitionFunction function : finiteStateMachine.getTransitionFunctions())
+                if (((DeterministicTransitionFunctionInput) function.getIn()).getState().equals(state) ||
+                        function.getOut().equals(state))
+                    continue loop;
+            statesToRemove.add(state);
+        }
+        states.removeAll(statesToRemove);
+        finiteStateMachine.getFiniteStates().removeAll(statesToRemove);
+        finiteStateMachine.getInitialStates().removeAll(statesToRemove);
     }
 
     private static Map<TransitionFunctionInput, Set<Character>> getTransitionTable(List<TransitionFunction> functions) {
         Map<TransitionFunctionInput, Set<Character>> result = new HashMap<>();
-        for (TransitionFunction outer : functions) {
-            TransitionFunctionInput in = outer.getIn();
-            Set<Character> states = new HashSet<>();
-            for (TransitionFunction inner : functions)
-                if (inner.getIn().equals(in))
-                    states.add(inner.getOut());
-            states.add(outer.getOut());
-            result.put(in, states);
+        for (TransitionFunction function : functions) {
+            Set<Character> states = result.computeIfAbsent(function.getIn(), k -> new HashSet<>());
+            states.add(function.getOut());
         }
         return result;
     }
 
-    private static Map<TransitionFunctionInput, Set<Character>> determineTransitionFunctions(Map<TransitionFunctionInput, Set<Character>> transitionTable) {
+    private static Map<TransitionFunctionInput, Set<Character>>
+    determineTransitionFunctions(Map<TransitionFunctionInput, Set<Character>> transitionTable,
+                                 Set<Character> inputSignals) {
         HashMap<TransitionFunctionInput, Set<Character>> result = new HashMap<>();
-        for (Map.Entry<TransitionFunctionInput, Set<Character>> outerEntry : transitionTable.entrySet())
-            if (outerEntry.getValue().size() > 1)
-                for (Character character : outerEntry.getValue())
-                    for (Map.Entry<TransitionFunctionInput, Set<Character>> innerEntry : transitionTable.entrySet())
-                        if (innerEntry.getKey().getState().equals(character)) {
-                            NonDeterministicTransitionFunctionInput input = new NonDeterministicTransitionFunctionInput();
-                            input.setState(outerEntry.getValue());
-                            input.setSignal(innerEntry.getKey().getSignal());
-                            result.put(input, innerEntry.getValue());
-                        }
-        result.putAll(transitionTable);
+        Set<Set<Character>> needToFill = new HashSet<>();
+        Set<Set<Character>> alreadyFilled = new HashSet<>();
+        Set<Character> initSet = new HashSet<>();
+        initSet.add('S');
+        needToFill.add(initSet);
+        while (!needToFill.isEmpty()) {
+            Set<Character> columnToFill = (Set<Character>) needToFill.toArray()[0];
+            alreadyFilled.add(columnToFill);
+            for (Character signal : inputSignals) {
+                Set<Character> output = new HashSet<>();
+                for (Map.Entry<TransitionFunctionInput, Set<Character>> entry : transitionTable.entrySet()) {
+                    if (signal.equals(entry.getKey().getSignal()) &&
+                            columnToFill.contains(((DeterministicTransitionFunctionInput) entry.getKey()).getState()))
+                        output.addAll(entry.getValue());
+                }
+                if (output.isEmpty()) continue;
+                TransitionFunctionInput input;
+                if (columnToFill.size() == 1) {
+                    input = new DeterministicTransitionFunctionInput();
+                    ((DeterministicTransitionFunctionInput) input).setState((Character) columnToFill.toArray()[0]);
+                } else {
+                    input = new NonDeterministicTransitionFunctionInput();
+                    ((NonDeterministicTransitionFunctionInput) input).setState(columnToFill);
+                }
+                input.setSignal(signal);
+                result.put(input, output);
+                if (!alreadyFilled.contains(output))
+                    needToFill.add(output);
+            }
+            needToFill.remove(columnToFill);
+        }
         return result;
     }
 

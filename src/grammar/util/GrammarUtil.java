@@ -27,7 +27,7 @@ public class GrammarUtil {
 
     private static boolean isContextSensitive(Grammar grammar) {
         for (Rule rule : grammar.getRules())
-            if (rule.getLeft().length() > rule.getRight().length()) return false;
+            if (rule.getLeft().length() > rule.getRight().length() && !rule.getRight().isEmpty()) return false;
         return true;
     }
 
@@ -46,7 +46,7 @@ public class GrammarUtil {
             for (Character rightChar : rightChars)
                 if (grammar.getN().contains(rightChar)) nonTerminalsCount++;
             final int terminalsCount = rightChars.size() - nonTerminalsCount;
-            if (terminalsCount != 1 || nonTerminalsCount > 1) return false;
+            if (terminalsCount > 1 || nonTerminalsCount > 1) return false;
         }
         return true;
     }
